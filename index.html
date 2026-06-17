@@ -229,7 +229,7 @@
   // ---- smartENERGY: heute, 15-min ----
   async function fetchSmartEnergyToday(){
     const url = 'https://apis.smartenergy.at/market/v1/price';
-    const res = await fetch(url, {mode:'cors', cache:'no-store'});
+    const res = await fetch(url, {cache:'no-store'});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     const interval = json.interval || 15;
@@ -238,7 +238,7 @@
       return {
         start,
         end: start.plus({minutes: interval}),
-        price: d.value / 100 / 1.2  // ct/kWh inkl. MwSt → EUR/kWh exkl. MwSt
+        price: d.value / 100  // ct/kWh → EUR/kWh (fmtPrice multipliziert ×100 zurück)
       };
     }).sort((a,b) => a.start - b.start);
   }
