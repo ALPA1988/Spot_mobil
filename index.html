@@ -226,6 +226,23 @@
     }
   }
 
+  // ---- smartENERGY: heute, 15-min ----
+  async function fetchSmartEnergyToday(){
+    const url = 'https://apis.smartenergy.at/market/v1/price';
+    const res = await fetch(url, {mode:'cors', cache:'no-store'});
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const interval = json.interval || 15;
+    return (json.data||[]).map(d => {
+      const start = DateTime.fromISO(d.date, {zone:tz});
+      return {
+        start,
+        end: start.plus({minutes: interval}),
+        price: d.value / 100 / 1.2  // ct/kWh inkl. MwSt → EUR/kWh exkl. MwSt
+      };
+    }).sort((a,b) => a.start - b.start);
+  }
+
   // ---- Daten laden ----
   let data30 = [];
   try { data30 = await fetchWindow(start30, end30); }
@@ -234,7 +251,13 @@
     return;
   }
 
-  const todayData = data30.filter(d => d.start >= todayStart && d.start <= todayEnd);
+  // Heute: smartENERGY (15-min), Fallback auf aWATTar-Slice
+  let todayData = data30.filter(d => d.start >= todayStart && d.start <= todayEnd);
+  try {
+    const seData = await fetchSmartEnergyToday();
+    if(seData && seData.length) todayData = seData;
+  } catch(e){ /* Fallback bleibt */ }
+
   // Morgen separat laden, damit es auch erscheint, wenn Cache von gestern kommt
   let tomorrowData = [];
   try { tomorrowData = await fetchWindow(tomorrowStart, tomorrowEnd); }
