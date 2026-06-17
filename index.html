@@ -284,7 +284,7 @@
     $("#kpi-avg-30").textContent = fmtPrice(avg30);
   }
 
-  // ---- CHARTS (Heute/Morgen) ----
+  // ---- CHARTS (Heute/Morgen) — Step-Line ----
   function drawHourlyChart(containerSel, dataset){
     const el = d3.select(containerSel);
     el.selectAll("*").remove();
@@ -316,7 +316,6 @@
       .range([height,0])
       .nice();
 
-    // Viertelstunden-aware: Ticks alle 2h, bei wenig Platz alle 4h
     const xTickMinutes = width < 360 ? 240 : (width < 520 ? 120 : 60);
     const yTicks = width < 360 ? 4 : 6;
 
@@ -338,37 +337,55 @@
     const dayAvg = dataset.reduce((s,d)=>s+d.price,0)/dataset.length;
     horizLine(g, y, dayAvg, width);
 
+    // Step-Pfad: für jeden Datenpunkt horizontale Linie von start bis end
+    const stepPoints = [];
+    dataset.forEach(d => {
+      stepPoints.push([x(d.start.toJSDate()), y(d.price)]);
+      stepPoints.push([x(d.end.toJSDate()),   y(d.price)]);
+    });
+    const lineStr = stepPoints.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+
+    // Gefüllte Fläche unter der Kurve
+    const zero = y(Math.max(0, y.domain()[0]));
+    const areaStr = lineStr
+      + ` L${stepPoints[stepPoints.length-1][0].toFixed(1)},${zero}`
+      + ` L${stepPoints[0][0].toFixed(1)},${zero} Z`;
+
+    g.append("path").attr("d", areaStr)
+      .attr("fill","var(--blue)").attr("opacity",0.15);
+
+    g.append("path").attr("d", lineStr)
+      .attr("fill","none").attr("stroke","var(--blue)").attr("stroke-width",2);
+
+    // Min / Max Punkte markieren
     const minItem = dataset.reduce((a,b)=>a.price<b.price?a:b);
     const maxItem = dataset.reduce((a,b)=>a.price>b.price?a:b);
-    const isSameHour = (a,b)=>a.start.toMillis()===b.start.toMillis();
+    const midX = d => (x(d.start.toJSDate()) + x(d.end.toJSDate())) / 2;
 
-    const hourW = x(dataset[0].end.toJSDate()) - x(dataset[0].start.toJSDate());
-    const bw = Math.max(2, hourW * 0.9);
+    g.append("circle").attr("cx", midX(minItem)).attr("cy", y(minItem.price)).attr("r",5)
+      .attr("fill","var(--green)").attr("stroke","#fff").attr("stroke-width",1.5);
+    g.append("circle").attr("cx", midX(maxItem)).attr("cy", y(maxItem.price)).attr("r",5)
+      .attr("fill","var(--red)").attr("stroke","#fff").attr("stroke-width",1.5);
 
-    g.selectAll("rect.bar")
+    // Aktuellen Zeitpunkt markieren
+    const nowDyn = luxon.DateTime.now().setZone(tz);
+    const currentItem = dataset.find(d => nowDyn >= d.start && nowDyn < d.end);
+    if(currentItem){
+      g.append("circle").attr("cx", midX(currentItem)).attr("cy", y(currentItem.price)).attr("r",5)
+        .attr("fill","#000").attr("stroke","#fff").attr("stroke-width",1.5);
+    }
+
+    // Unsichtbare Hover-Rechtecke für Tooltip
+    const slotW = x(dataset[0].end.toJSDate()) - x(dataset[0].start.toJSDate());
+    g.selectAll("rect.hover")
       .data(dataset)
       .enter().append("rect")
+        .attr("class","hover")
         .attr("x",d=>x(d.start.toJSDate()))
-        .attr("y",d=> d.price >= 0 ? y(d.price) : y(0))
-        .attr("width",bw)
-        .attr("height",d=> Math.abs(y(d.price) - y(0)))
-        .attr("rx",2)
-        .attr("fill",d=>{
-          if(d.price < 0) return "var(--neg)";
-          if(isSameHour(d,minItem)) return "var(--green)";
-          if(isSameHour(d,maxItem)) return "var(--red)";
-          return d.price >= dayAvg ? "var(--blue)" : "var(--blue-lo)";
-        })
-        .attr("stroke", d => {
-          const nowDyn = luxon.DateTime.now().setZone(tz);
-          if (nowDyn >= d.start && nowDyn < d.end) return "#000"; // aktuelle Stunde umranden
-          return null;
-        })
-        .attr("stroke-width", d => {
-          const nowDyn = luxon.DateTime.now().setZone(tz);
-          if (nowDyn >= d.start && nowDyn < d.end) return 2;
-          return 0;
-        })
+        .attr("y",0)
+        .attr("width",Math.max(1,slotW))
+        .attr("height",height)
+        .attr("fill","transparent")
         .on("pointermove",(ev,d)=>{
           tooltip.style("opacity",1)
             .html(`<strong>${fmtPrice(d.price)}</strong><br>${d.start.toFormat("HH:mm")}–${d.end.toFormat("HH:mm")}`)
