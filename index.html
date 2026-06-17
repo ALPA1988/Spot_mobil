@@ -251,12 +251,21 @@
     return;
   }
 
-  // Heute: smartENERGY (15-min), Fallback auf aWATTar-Slice
+  // Heute: smartENERGY (15-min), Fallback: aWATTar in 4×15min aufteilen
   let todayData = data30.filter(d => d.start >= todayStart && d.start <= todayEnd);
+  let usedSmartEnergy = false;
   try {
     const seData = await fetchSmartEnergyToday();
-    if(seData && seData.length) todayData = seData;
-  } catch(e){ /* Fallback bleibt */ }
+    if(seData && seData.length){ todayData = seData; usedSmartEnergy = true; }
+  } catch(e){ /* Fallback */ }
+  if(!usedSmartEnergy){
+    // Jede Stunde in 4 Viertelstunden-Slots aufteilen
+    todayData = todayData.flatMap(d => [0,1,2,3].map(i => ({
+      start: d.start.plus({minutes: i*15}),
+      end:   d.start.plus({minutes: (i+1)*15}),
+      price: d.price
+    })));
+  }
 
   // Morgen separat laden, damit es auch erscheint, wenn Cache von gestern kommt
   let tomorrowData = [];
