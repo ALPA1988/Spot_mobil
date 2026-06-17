@@ -226,21 +226,39 @@
     }
   }
 
-  // ---- smartENERGY: heute, 15-min ----
-  async function fetchSmartEnergyToday(){
-    const url = 'https://apis.smartenergy.at/market/v1/price';
+  // ---- ENTSO-E: heute + morgen, 15-min ----
+  const ENTSOE_TOKEN = '930c01dc-e1bc-43e8-9f32-30c741099051';
+  const ENTSOE_DOMAIN = '10YAT-APG------L';
+
+  async function fetchEntsoe(start, end){
+    const fmt = dt => dt.toUTC().toFormat("yyyyLLddHHmm");
+    const url = `https://web-api.tp.entsoe.eu/api?securityToken=${ENTSOE_TOKEN}`
+      + `&documentType=A44&in_Domain=${ENTSOE_DOMAIN}&out_Domain=${ENTSOE_DOMAIN}`
+      + `&periodStart=${fmt(start)}&periodEnd=${fmt(end)}`;
     const res = await fetch(url, {cache:'no-store'});
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const interval = json.interval || 15;
-    return (json.data||[]).map(d => {
-      const start = DateTime.fromISO(d.date, {zone:tz});
-      return {
-        start,
-        end: start.plus({minutes: interval}),
-        price: d.value / 100  // ct/kWh → EUR/kWh (fmtPrice multipliziert ×100 zurück)
-      };
-    }).sort((a,b) => a.start - b.start);
+    if(!res.ok) throw new Error(`ENTSO-E HTTP ${res.status}`);
+    const text = await res.text();
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(text, 'application/xml');
+    const results = [];
+    xml.querySelectorAll('TimeSeries').forEach(ts => {
+      ts.querySelectorAll('Period').forEach(period => {
+        const periodStart = DateTime.fromISO(period.querySelector('timeInterval start').textContent.trim(), {zone:'UTC'}).setZone(tz);
+        const resText = period.querySelector('resolution').textContent.trim();
+        const intervalMin = resText === 'PT15M' ? 15 : 60;
+        period.querySelectorAll('Point').forEach(pt => {
+          const pos = parseInt(pt.querySelector('position').textContent.trim()) - 1;
+          const price = parseFloat(pt.querySelector('price\\.amount').textContent.trim());
+          const slotStart = periodStart.plus({minutes: pos * intervalMin});
+          results.push({
+            start: slotStart,
+            end:   slotStart.plus({minutes: intervalMin}),
+            price: price / 1000  // EUR/MWh → EUR/kWh
+          });
+        });
+      });
+    });
+    return results.sort((a,b) => a.start - b.start);
   }
 
   // ---- Daten laden ----
@@ -251,15 +269,14 @@
     return;
   }
 
-  // Heute: smartENERGY (15-min), Fallback: aWATTar in 4×15min aufteilen
+  // Heute: ENTSO-E (15-min), Fallback: aWATTar in 4×15min aufteilen
   let todayData = data30.filter(d => d.start >= todayStart && d.start <= todayEnd);
-  let usedSmartEnergy = false;
   try {
-    const seData = await fetchSmartEnergyToday();
-    if(seData && seData.length){ todayData = seData; usedSmartEnergy = true; }
-  } catch(e){ /* Fallback */ }
-  if(!usedSmartEnergy){
-    // Jede Stunde in 4 Viertelstunden-Slots aufteilen
+    const entsoeData = await fetchEntsoe(todayStart, todayEnd);
+    const filtered = entsoeData.filter(d => d.start >= todayStart && d.start < todayEnd.plus({days:1}));
+    if(filtered.length) todayData = filtered;
+  } catch(e){
+    // Fallback: Jede Stunde in 4 Viertelstunden-Slots aufteilen
     todayData = todayData.flatMap(d => [0,1,2,3].map(i => ({
       start: d.start.plus({minutes: i*15}),
       end:   d.start.plus({minutes: (i+1)*15}),
@@ -267,10 +284,16 @@
     })));
   }
 
-  // Morgen separat laden, damit es auch erscheint, wenn Cache von gestern kommt
+  // Morgen: ENTSO-E (15-min), Fallback: aWATTar
   let tomorrowData = [];
-  try { tomorrowData = await fetchWindow(tomorrowStart, tomorrowEnd); }
-  catch(e){ /* "noch nicht verfügbar" bleibt stehen */ }
+  try {
+    const entsoeTomorrow = await fetchEntsoe(tomorrowStart, tomorrowEnd);
+    const filtered = entsoeTomorrow.filter(d => d.start >= tomorrowStart && d.start < tomorrowEnd.plus({days:1}));
+    if(filtered.length) tomorrowData = filtered;
+  } catch(e){
+    try { tomorrowData = await fetchWindow(tomorrowStart, tomorrowEnd); }
+    catch(e2){ /* "noch nicht verfügbar" bleibt stehen */ }
+  }
 
   // ---- KPIs (heute) ----
   if(todayData.length){
