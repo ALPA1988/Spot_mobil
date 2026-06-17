@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>EPEX SPOT AT – Mobile (EUR/kWh)</title>
+  <title>EPEX SPOT AT – Mobile (ct/kWh)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#111827" />
   <link rel="manifest" href="manifest.webmanifest">
@@ -83,7 +83,7 @@
 </head>
 <body>
   <div class="header">
-    <h1>EPEX SPOT Österreich – EUR/kWh</h1>
+    <h1>EPEX SPOT Österreich – ct/kWh</h1>
     <button id="refresh-btn" title="Neu laden">🔄</button>
   </div>
 
@@ -147,7 +147,7 @@
   const notice = $('#notice');
 
   // ---- helpers ----
-  const fmtPrice = v => `${v.toFixed(4)} €/kWh`;
+  const fmtPrice = v => `${(v * 100).toFixed(2)} ct/kWh`;
   const byDayKey = dt => dt.toFormat("yyyy-LL-dd");
   const cssNum = name => parseInt(getComputedStyle(document.documentElement).getPropertyValue(name), 10);
 
@@ -184,7 +184,7 @@
   const end30   = todayEnd;
 
   // ---- Fetch mit Offline-Fallback (localStorage) ----
-  const STORAGE_KEY = 'awattar_cache_v1'; // speichert {ts, start, end, data}
+  const STORAGE_KEY = 'awattar_cache_v2'; // speichert {ts, start, end, data}
   function saveCache(obj){
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); }catch{}
   }
@@ -293,14 +293,15 @@
       .range([height,0])
       .nice();
 
-    const xTickHours = width < 360 ? 4 : (width < 520 ? 3 : 2);
+    // Viertelstunden-aware: Ticks alle 2h, bei wenig Platz alle 4h
+    const xTickMinutes = width < 360 ? 240 : (width < 520 ? 120 : 60);
     const yTicks = width < 360 ? 4 : 6;
 
     g.append("g").attr("transform",`translate(0,${height})`)
-      .call(d3.axisBottom(x).ticks(d3.timeHour.every(xTickHours)).tickFormat(d3.timeFormat("%H:%M")))
+      .call(d3.axisBottom(x).ticks(d3.timeMinute.every(xTickMinutes)).tickFormat(d3.timeFormat("%H:%M")))
       .selectAll("text").style("font-size","11px").style("fill","var(--muted)");
 
-    g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickFormat(d=>d.toFixed(2)))
+    g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickFormat(d=>(d*100).toFixed(1)))
       .selectAll("text").style("font-size","11px").style("fill","var(--muted)");
 
     g.append("g").selectAll("line.grid")
@@ -352,7 +353,7 @@
         })
         .on("pointerleave",()=>tooltip.style("opacity",0));
 
-    g.append("text").attr("x",-margin.left+10).attr("y",-4).text("EUR/kWh")
+    g.append("text").attr("x",-margin.left+10).attr("y",-4).text("ct/kWh")
       .style("fill","var(--muted)").style("font-size","11px");
   }
 
@@ -420,7 +421,7 @@
       .attr("transform","rotate(-25)").style("text-anchor","end");
 
     const yTicks = width < 360 ? 4 : 6;
-    g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickFormat(d=>d.toFixed(2)))
+    g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickFormat(d=>(d*100).toFixed(1)))
       .selectAll("text").style("font-size","11px").style("fill","var(--muted)");
 
     g.append("g").selectAll("line.grid")
@@ -459,7 +460,7 @@
         })
         .on("pointerleave",()=>tooltip.style("opacity",0));
 
-    g.append("text").attr("x",-margin.left+10).attr("y",-4).text("EUR/kWh")
+    g.append("text").attr("x",-margin.left+10).attr("y",-4).text("ct/kWh")
       .style("fill","var(--muted)").style("font-size","11px");
   }
 
