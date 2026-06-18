@@ -22,7 +22,7 @@ def fetch_day(date_utc_start):
     with urllib.request.urlopen(url) as r:
         xml_text = r.read()
     root = ET.fromstring(xml_text)
-    results = []
+    seen = {}  # deduplizieren nach Slot-Start
     for ts in root.findall('ns:TimeSeries', NS):
         for period in ts.findall('ns:Period', NS):
             period_start_str = period.find('ns:timeInterval/ns:start', NS).text.strip()
@@ -34,12 +34,14 @@ def fetch_day(date_utc_start):
                 price_mwh = float(pt.find('ns:price.amount', NS).text.strip())
                 slot_start = period_start + timedelta(minutes=pos * interval_min)
                 slot_end = slot_start + timedelta(minutes=interval_min)
-                results.append({
-                    's': slot_start.isoformat(),
-                    'e': slot_end.isoformat(),
-                    'p': round(price_mwh / 1000, 6)  # EUR/MWh → EUR/kWh
-                })
-    return results
+                key = slot_start.isoformat()
+                if key not in seen:  # ersten Eintrag pro Slot behalten
+                    seen[key] = {
+                        's': slot_start.isoformat(),
+                        'e': slot_end.isoformat(),
+                        'p': round(price_mwh / 1000, 6)
+                    }
+    return sorted(seen.values(), key=lambda x: x['s'])
 
 now_utc = datetime.now(timezone.utc)
 today_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
