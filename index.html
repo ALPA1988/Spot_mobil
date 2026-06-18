@@ -270,7 +270,7 @@
     const max = todayData.reduce((a,b)=>a.price>b.price?a:b);
     const avgToday = todayData.reduce((s,d)=>s+d.price,0)/todayData.length;
     const avg30 = data30.reduce((s,d)=>s+d.price,0)/data30.length;
-    const current = todayData.find(d => now >= d.start && now < d.end);
+    const current = todayData.find(d => now.toMillis() >= d.start.toMillis() && now.toMillis() < d.end.toMillis());
     if (current) {
       document.getElementById("kpi-current").textContent = fmtPrice(current.price);
       document.getElementById("kpi-current-time").textContent = 
@@ -545,8 +545,12 @@
 
 <!-- Refresh-Button nur Seite neu laden -->
 <script>
-document.getElementById('refresh-btn').addEventListener('click', () => {
-  location.reload();
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage('clearCache');
+    await new Promise(r => setTimeout(r, 100));
+  }
+  location.reload(true);
 });
 </script>
 

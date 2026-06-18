@@ -1,10 +1,7 @@
 // sw.js
-const VERSION = 'v1.0.3';
+const VERSION = 'v1.0.4';
 const APP_SHELL = [
-  './',
-  './index.html',
   './manifest.webmanifest',
-  './sw.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/maskable-192.png',
@@ -12,7 +9,6 @@ const APP_SHELL = [
 ];
 const CACHE_NAME = `spot-app-${VERSION}`;
 const CDN_HOSTS = ['cdn.jsdelivr.net'];
-const API_HOST = 'api.awattar.at';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -29,19 +25,32 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
-// Routing-Strategien:
-// - API (Network-First, Fallback Cache)
-// - CDN (Stale-While-Revalidate)
-// - Sonst: Cache-First (App-Shell)
+// Refresh-Button: Cache leeren und neu laden
+self.addEventListener('message', (event) => {
+  if (event.data === 'skipWaiting') self.skipWaiting();
+  if (event.data === 'clearCache') {
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Nur GET cachen
   if (req.method !== 'GET') return;
 
+  // index.html + data.json: immer frisch vom Netz
+  if (
+    req.mode === 'navigate' ||
+    url.pathname.endsWith('/index.html') ||
+    url.pathname.endsWith('/data.json')
+  ) {
+    event.respondWith(networkFirst(req));
+    return;
+  }
+
   // API: Network-First
-  if (url.hostname === API_HOST) {
+  if (url.hostname === 'api.awattar.at') {
     event.respondWith(networkFirst(req));
     return;
   }
@@ -52,7 +61,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App-Shell: Cache-First
+  // Rest: Cache-First (Icons, Manifest)
   event.respondWith(cacheFirst(req));
 });
 
