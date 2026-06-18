@@ -74,11 +74,7 @@
       /* Mobile: immer oben zentriert statt am Finger */
     }
     @media (max-width:600px){
-      .tooltip{
-        position:fixed;left:50%!important;top:8px!important;
-        transform:translateX(-50%);
-        width:auto;min-width:140px;text-align:center;
-      }
+      .tooltip{ min-width:120px; }
     }
     .notice{
       position:fixed;left:50%;transform:translateX(-50%);
@@ -404,12 +400,12 @@
         .attr("height",height)
         .attr("fill","transparent")
         .on("pointerenter pointermove",(ev,d)=>{
-          const isMobile = window.matchMedia("(max-width:600px)").matches;
+          const tx = (ev.touches ? ev.touches[0].clientX : ev.clientX);
+          const ty = (ev.touches ? ev.touches[0].clientY : ev.clientY);
           tooltip.style("opacity",1)
-            .html(`<strong>${fmtPrice(d.price)}</strong><br>${d.start.toFormat("HH:mm")}–${d.end.toFormat("HH:mm")}`);
-          if(!isMobile){
-            tooltip.style("left",(ev.clientX+12)+"px").style("top",(ev.clientY+12)+"px");
-          }
+            .html(`<strong>${fmtPrice(d.price)}</strong><br>${d.start.toFormat("HH:mm")}–${d.end.toFormat("HH:mm")}`)
+            .style("left",(tx+12)+"px")
+            .style("top", Math.max(8, ty-60)+"px");
         })
         .on("pointerleave",()=>tooltip.style("opacity",0));
 
