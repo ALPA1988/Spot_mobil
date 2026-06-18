@@ -554,7 +554,7 @@
 })();
 </script>
 
-<!-- Refresh-Button nur Seite neu laden -->
+<!-- Refresh-Button: Cache leeren und neu laden -->
 <script>
 document.getElementById('refresh-btn').addEventListener('click', async () => {
   if (navigator.serviceWorker && navigator.serviceWorker.controller) {

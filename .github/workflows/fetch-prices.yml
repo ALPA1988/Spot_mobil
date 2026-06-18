@@ -2,8 +2,7 @@ name: Fetch ENTSO-E Prices
 
 on:
   schedule:
-    - cron: '0 3 * * *'   # 03:00 UTC = 05:00 Wien (heute)
-    - cron: '0 12 * * *'  # 12:00 UTC = 14:00 Wien (morgen verfügbar)
+    - cron: '0 * * * *'   # stündlich — Morgen-Preise erscheinen ~12:00 UTC
   workflow_dispatch:       # manuell auslösbar
 
 jobs:
