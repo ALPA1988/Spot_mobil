@@ -303,10 +303,16 @@
       .attr("height",height+margin.top+margin.bottom)
       .attr("viewBox",`0 0 ${width+margin.left+margin.right} ${height+margin.top+margin.bottom}`);
 
+    const uid = Math.random().toString(36).slice(2);
+    svg.append("defs").append("clipPath").attr("id","clip-"+uid)
+      .append("rect").attr("width",width).attr("height",height+8).attr("y",-8);
+
     const g = svg.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
 
+    const dayStart = dataset[0].start.startOf("day").toJSDate();
+    const dayEnd   = dataset[0].start.startOf("day").plus({days:1}).toJSDate();
     const x = d3.scaleTime()
-      .domain([dataset[0].start.toJSDate(), dataset[dataset.length-1].end.toJSDate()])
+      .domain([dayStart, dayEnd])
       .range([0,width]);
 
     const minP = d3.min(dataset,d=>d.price);
@@ -353,10 +359,12 @@
       + ` L${stepPoints[0][0].toFixed(1)},${zero} Z`;
 
     g.append("path").attr("d", areaStr)
-      .attr("fill","var(--blue)").attr("opacity",0.15);
+      .attr("fill","var(--blue)").attr("opacity",0.15)
+      .attr("clip-path",`url(#clip-${uid})`);
 
     g.append("path").attr("d", lineStr)
-      .attr("fill","none").attr("stroke","var(--blue)").attr("stroke-width",2);
+      .attr("fill","none").attr("stroke","var(--blue)").attr("stroke-width",2)
+      .attr("clip-path",`url(#clip-${uid})`);
 
     // Min / Max Punkte markieren
     const minItem = dataset.reduce((a,b)=>a.price<b.price?a:b);
