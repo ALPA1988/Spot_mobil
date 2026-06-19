@@ -359,7 +359,8 @@
       .nice();
 
     const viewportWidth = document.documentElement.clientWidth;
-    const xTickHours = viewportWidth <= 480 ? 6 : (width < 600 ? 4 : (width < 900 ? 2 : 1));
+    const isMobilePortrait = viewportWidth <= 480;
+    const xTickHours = isMobilePortrait ? 2 : (width < 600 ? 4 : (width < 900 ? 2 : 1));
     const tickStart = dataset[0].start.startOf("day");
     const xTickValues = d3.range(0, 25, xTickHours).map(hour => tickStart.plus({hours: hour}).toJSDate());
     const yTicks = width < 400 ? 4 : 6;
