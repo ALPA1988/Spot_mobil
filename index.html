@@ -358,11 +358,16 @@
       .range([height,0])
       .nice();
 
-    const xTickMinutes = width < 400 ? 360 : (width < 600 ? 240 : (width < 900 ? 120 : 60));
+    const viewportWidth = document.documentElement.clientWidth;
+    const xTickHours = viewportWidth <= 480 ? 6 : (width < 600 ? 4 : (width < 900 ? 2 : 1));
+    const tickStart = dataset[0].start.startOf("day");
+    const xTickValues = d3.range(0, 25, xTickHours).map(hour => tickStart.plus({hours: hour}).toJSDate());
     const yTicks = width < 400 ? 4 : 6;
 
     g.append("g").attr("transform",`translate(0,${height})`)
-      .call(d3.axisBottom(x).ticks(d3.timeMinute.every(xTickMinutes)).tickFormat(d3.timeFormat("%H:%M")))
+      .call(d3.axisBottom(x).tickValues(xTickValues).tickFormat(d =>
+        d.getTime() === dayEnd.getTime() ? "24:00" : DateTime.fromJSDate(d, {zone:tz}).toFormat("HH:mm")
+      ))
       .selectAll("text").style("font-size","11px").style("fill","var(--muted)");
 
     g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickFormat(d=>(d*100).toFixed(1)))
