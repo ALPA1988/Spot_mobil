@@ -172,7 +172,8 @@
       .attr("stroke", "var(--line)")
       .attr("stroke-width", 1.5)
       .attr("opacity", 0.7)
-      .attr("stroke-dasharray", "4,4");
+      .attr("stroke-dasharray", "4,4")
+      .attr("pointer-events", "none");
   }
   function zeroLine(g, y, width){
     g.append("line")
@@ -383,8 +384,6 @@
 
     zeroLine(g, y, width);
     const dayAvg = dataset.reduce((s,d)=>s+d.price,0)/dataset.length;
-    horizLine(g, y, dayAvg, width);
-
     const zero = y(0);
     g.selectAll("rect.price-bar")
       .data(dataset)
@@ -397,6 +396,8 @@
         .attr("height",d=>Math.max(1, Math.abs(y(d.price) - zero)))
         .attr("fill",d=>priceColor(d.price))
         .attr("clip-path",`url(#clip-${uid})`);
+
+    horizLine(g, y, dayAvg, width);
 
     // Min / Max Punkte markieren
     const minItem = dataset.reduce((a,b)=>a.price<b.price?a:b);
