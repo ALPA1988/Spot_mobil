@@ -490,7 +490,8 @@
       .domain([Math.min(minY - pad, 0), Math.max(maxY + pad, 0)])
       .range([height,0]).nice();
 
-    const tickEvery = width < 360 ? 3 : (width < 520 ? 2 : 1);
+    const maxDateTicks = width < 480 ? 5 : (width < 720 ? 8 : (width < 1000 ? 12 : 16));
+    const tickEvery = Math.max(1, Math.ceil(days.length / maxDateTicks));
     const tickVals = days.map(d=>d.day.toISODate()).filter((_,i)=> i % tickEvery === 0);
 
     g.append("g").attr("transform",`translate(0,${height})`)
@@ -498,7 +499,8 @@
         return DateTime.fromISO(d,{zone:tz}).toFormat("dd.LL");
       }))
       .selectAll("text").style("font-size","11px").style("fill","var(--muted)")
-      .attr("transform","rotate(-25)").style("text-anchor","end");
+      .attr("transform", width < 480 ? null : "rotate(-25)")
+      .style("text-anchor", width < 480 ? "middle" : "end");
 
     const yTicks = width < 360 ? 4 : 6;
     g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickFormat(d=>(d*100).toFixed(1)))
