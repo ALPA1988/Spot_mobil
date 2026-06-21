@@ -39,6 +39,22 @@
       margin-bottom:12px;
       gap:12px;
     }
+    .header-actions{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin-left:auto;
+    }
+    #last-fetch{
+      color:var(--muted);
+      font-size:12px;
+      font-variant-numeric:tabular-nums;
+      white-space:nowrap;
+    }
+    @media (max-width:600px){
+      .header{align-items:flex-start;flex-wrap:wrap}
+      .header-actions{width:100%;justify-content:flex-end}
+    }
     #refresh-btn{
       background:var(--card);
       border:1px solid var(--grid);
@@ -92,7 +108,10 @@
 <body>
   <div class="header">
     <h1>EPEX SPOT Österreich – ct/kWh</h1>
-    <button id="refresh-btn" title="Neu laden">🔄</button>
+    <div class="header-actions">
+      <time id="last-fetch" title="Letzter ENTSO-E-Fetch">–</time>
+      <button id="refresh-btn" title="Neu laden">🔄</button>
+    </div>
   </div>
 
   <div class="kpis">
@@ -286,6 +305,12 @@
     const res = await fetch('./data.json', {cache:'no-store'});
     if(!res.ok) throw new Error('data.json nicht gefunden');
     const json = await res.json();
+    const updated = DateTime.fromISO(json.updated, {setZone:true}).setZone(tz);
+    if(updated.isValid){
+      const lastFetch = $("#last-fetch");
+      lastFetch.textContent = updated.toFormat("dd.LL.yyyy HH:mm:ss");
+      lastFetch.dateTime = updated.toISO();
+    }
     const today15 = parseJsonSlots(json.today).filter(d => d.start >= todayStart && d.start <= todayEnd);
     if(today15.length) todayData = today15;
     tomorrowData = parseJsonSlots(json.tomorrow).filter(d => d.start >= tomorrowStart && d.start <= tomorrowEnd);

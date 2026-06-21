@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = 'v1.0.9';
+const VERSION = 'v1.0.10';
 const APP_SHELL = [
   './manifest.webmanifest',
   './icons/icon-192.png',
