@@ -24,7 +24,7 @@ def classification_position(time_series):
     return node.text.strip() if node is not None and node.text else None
 
 
-def fetch_slots(start_local_date, end_local_date):
+def fetch_slots(start_local_date, end_local_date, validate=True):
     start_local = datetime.combine(start_local_date, time.min, tzinfo=VIENNA)
     end_local = datetime.combine(end_local_date, time.min, tzinfo=VIENNA)
     start_utc = start_local.astimezone(timezone.utc)
@@ -86,7 +86,7 @@ def fetch_slots(start_local_date, end_local_date):
                 }
 
     expected_slots = int((end_utc - start_utc).total_seconds() // (15 * 60))
-    if len(seen) != expected_slots:
+    if validate and len(seen) != expected_slots:
         raise ValueError(
             f'Incomplete ENTSO-E position-1 series for {start_local_date}..{end_local_date}: '
             f'expected {expected_slots} slots, got {len(seen)}'
@@ -122,7 +122,36 @@ def main():
     tomorrow_local = today_local + timedelta(days=1)
     history_start = today_local - timedelta(days=29)
 
-    history_slots = fetch_slots(history_start, tomorrow_local)
+    history_slots = fetch_slots(history_start, tomorrow_local, validate=False)
+    history_by_start = {slot["s"]: slot for slot in history_slots}
+    day = history_start
+    expected_history_slots = 0
+    while day < tomorrow_local:
+        day_slots = [
+            slot for slot in history_by_start.values()
+            if datetime.fromisoformat(slot["s"]).astimezone(VIENNA).date() == day
+        ]
+        day_start = datetime.combine(day, time.min, tzinfo=VIENNA)
+        day_end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=VIENNA)
+        expected_day_slots = int(
+            (day_end.astimezone(timezone.utc) - day_start.astimezone(timezone.utc)).total_seconds()
+            // (15 * 60)
+        )
+        expected_history_slots += expected_day_slots
+        if len(day_slots) != expected_day_slots:
+            print(
+                f"Historie {day}: {len(day_slots)}/{expected_day_slots} Punkte, lade Tag nach"
+            )
+            for slot in fetch_day(day):
+                history_by_start[slot["s"]] = slot
+        day += timedelta(days=1)
+
+    history_slots = sorted(history_by_start.values(), key=lambda item: item["s"])
+    if len(history_slots) != expected_history_slots:
+        raise ValueError(
+            f"Incomplete ENTSO-E history: expected {expected_history_slots} slots, "
+            f"got {len(history_slots)}"
+        )
     history = aggregate_daily(history_slots)
     today = [
         slot for slot in history_slots
