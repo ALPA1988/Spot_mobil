@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -39,8 +40,12 @@ def fetch_slots(start_local_date, end_local_date):
     })
     url = f'https://web-api.tp.entsoe.eu/api?{params}'
 
-    with urllib.request.urlopen(url) as response:
-        root = ET.fromstring(response.read())
+    try:
+        with urllib.request.urlopen(url) as response:
+            root = ET.fromstring(response.read())
+    except urllib.error.HTTPError as error:
+        details = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"ENTSO-E API HTTP {error.code}: {details}") from error
 
     all_series = root.findall('ns:TimeSeries', NS)
     position_one = [ts for ts in all_series if classification_position(ts) == '1']
@@ -146,4 +151,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as error:
+        message = str(error).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::error title=ENTSO-E fetch failed::{message}")
+        raise
