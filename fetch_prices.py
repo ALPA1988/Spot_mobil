@@ -71,19 +71,30 @@ def fetch_slots(start_local_date, end_local_date, validate=True):
             if resolution != 'PT15M':
                 raise ValueError(f'Unexpected ENTSO-E resolution: {resolution}')
 
-            for point in period.findall('ns:Point', NS):
-                position = int(point.findtext('ns:position', namespaces=NS)) - 1
-                price_mwh = float(point.findtext('ns:price.amount', namespaces=NS))
-                slot_start = period_start + timedelta(minutes=position * 15)
-                slot_end = slot_start + timedelta(minutes=15)
-                if slot_start < start_utc or slot_start >= end_utc:
-                    continue
+            period_end_str = period.findtext('ns:timeInterval/ns:end', namespaces=NS)
+            period_end = datetime.fromisoformat(period_end_str.strip().replace('Z', '+00:00'))
+            period_slots = int((period_end - period_start).total_seconds() // (15 * 60))
+            points = sorted(
+                (
+                    int(point.findtext('ns:position', namespaces=NS)) - 1,
+                    float(point.findtext('ns:price.amount', namespaces=NS)),
+                )
+                for point in period.findall('ns:Point', NS)
+            )
 
-                seen[slot_start.isoformat()] = {
-                    's': slot_start.isoformat(),
-                    'e': slot_end.isoformat(),
-                    'p': round(price_mwh / 1000, 6),
-                }
+            for index, (position, price_mwh) in enumerate(points):
+                next_position = points[index + 1][0] if index + 1 < len(points) else period_slots
+                for slot_position in range(position, next_position):
+                    slot_start = period_start + timedelta(minutes=slot_position * 15)
+                    slot_end = slot_start + timedelta(minutes=15)
+                    if slot_start < start_utc or slot_start >= end_utc:
+                        continue
+
+                    seen[slot_start.isoformat()] = {
+                        's': slot_start.isoformat(),
+                        'e': slot_end.isoformat(),
+                        'p': round(price_mwh / 1000, 6),
+                    }
 
     expected_slots = int((end_utc - start_utc).total_seconds() // (15 * 60))
     if validate and len(seen) != expected_slots:
