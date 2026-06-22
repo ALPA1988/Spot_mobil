@@ -1,6 +1,12 @@
 name: Fetch ENTSO-E Prices
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'fetch_prices.py'
+      - 'requirements.txt'
+      - '.github/workflows/fetch-prices.yml'
   schedule:
     - cron: '0 * * * *'   # stündlich — Morgen-Preise erscheinen ~12:00 UTC
   workflow_dispatch:       # manuell auslösbar
@@ -12,6 +18,8 @@ concurrency:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    env:
+      ENTSOE_TOKEN: ${{ secrets.ENTSOE_TOKEN }}
     permissions:
       contents: write
     steps:
@@ -26,6 +34,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
 
       - name: Fetch prices
         run: python fetch_prices.py
