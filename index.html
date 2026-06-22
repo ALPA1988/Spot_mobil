@@ -19,7 +19,7 @@
     :root{
       --bg:#ffffff; --text:#111827; --muted:#6b7280; --card:#f9fafb; --grid:#e5e7eb;
       --blue:#2563eb; --blue-lo:#3b82f6; --green:#16a34a; --red:#dc2626; --neg:#065f46; --line:#0f172a;
-      --price-neg:#6aa58b; --price-low:#8fd8a4; --price-midlow:#c6efb0; --price-mid:#f5df7e; --price-high:#f2b071; --price-veryhigh:#ee8f8f;
+      --price-neg:#6aa58b; --price-low:#8fd8a4; --price-midlow:#c6efb0; --price-mid:#f5df7e; --price-high:#f2b071; --price-veryhigh:#ee8f8f; --price-avg:#8fb5e8;
       --space:16px; --radius:14px; --chart-h-hourly:280; --chart-h-daily:320;
     }
     @media (max-width: 600px){ :root{ --space:14px; --radius:12px; --chart-h-hourly:240; --chart-h-daily:280; } }
@@ -154,9 +154,9 @@
   <div class="chart-card">
     <div id="chart-30" aria-label="Preise letzte 30 Tage"></div>
     <div class="legend" id="legend-30">
-      <div class="item" data-key="min"><span class="dot" style="background:var(--green)"></span><span>Minimum</span></div>
-      <div class="item" data-key="avg"><span class="dot" style="background:var(--blue)"></span><span>Durchschnitt</span></div>
-      <div class="item" data-key="max"><span class="dot" style="background:var(--red)"></span><span>Maximum</span></div>
+      <div class="item" data-key="min"><span class="dot" style="background:var(--price-low)"></span><span>Minimum</span></div>
+      <div class="item" data-key="avg"><span class="dot" style="background:var(--price-avg)"></span><span>Durchschnitt</span></div>
+      <div class="item" data-key="max"><span class="dot" style="background:var(--price-veryhigh)"></span><span>Maximum</span></div>
     </div>
   </div>
 
@@ -290,7 +290,17 @@
     })).sort((a,b) => a.start - b.start);
   }
 
+  function parseJsonHistory(arr){
+    return (arr||[]).map(d => ({
+      day: DateTime.fromISO(d.d, {zone: tz}),
+      min: d.min,
+      avg: d.avg,
+      max: d.max
+    })).sort((a,b) => a.day - b.day);
+  }
+
   // ---- Daten laden ----
+  let daily30Data = [];
   let data30 = [];
   try { data30 = await fetchWindow(start30, end30); }
   catch(e){
@@ -311,6 +321,7 @@
       lastFetch.textContent = updated.toFormat("dd.LL.yyyy HH:mm:ss");
       lastFetch.dateTime = updated.toISO();
     }
+    daily30Data = parseJsonHistory(json.history);
     const today15 = parseJsonSlots(json.today).filter(d => d.start >= todayStart && d.start <= todayEnd);
     if(today15.length) todayData = today15;
     tomorrowData = parseJsonSlots(json.tomorrow).filter(d => d.start >= tomorrowStart && d.start <= tomorrowEnd);
@@ -330,7 +341,9 @@
     const min = todayData.reduce((a,b)=>a.price<b.price?a:b);
     const max = todayData.reduce((a,b)=>a.price>b.price?a:b);
     const avgToday = todayData.reduce((s,d)=>s+d.price,0)/todayData.length;
-    const avg30 = data30.reduce((s,d)=>s+d.price,0)/data30.length;
+    const avg30 = daily30Data.length
+      ? daily30Data.reduce((sum,day)=>sum+day.avg,0)/daily30Data.length
+      : data30.reduce((s,d)=>s+d.price,0)/data30.length;
     const current = todayData.find(d => now.toMillis() >= d.start.toMillis() && now.toMillis() < d.end.toMillis());
     if (current) {
       document.getElementById("kpi-current").textContent = fmtPrice(current.price);
@@ -472,23 +485,25 @@
   // ---- 30-Tage-Chart (tagesweise, togglbare Legende) ----
   const visibility30 = { min: true, avg: true, max: true };
 
-  function drawDailyAggChart(containerSel, hourlyDataset){
+  function drawDailyAggChart(containerSel, hourlyDataset, dailyDataset){
     const { DateTime } = luxon;
     const tz = "Europe/Vienna";
 
-    // aggregate by local day
-    const byDay = new Map();
-    hourlyDataset.forEach(d=>{
-      const k = d.start.setZone(tz).toFormat("yyyy-LL-dd");
-      if(!byDay.has(k)) byDay.set(k, []);
-      byDay.get(k).push(d.price);
-    });
-    const days = Array.from(byDay.entries())
-      .map(([k,arr])=>{
-        const min = d3.min(arr), max = d3.max(arr), avg = arr.reduce((s,x)=>s+x,0)/arr.length;
-        return { day: DateTime.fromISO(k,{zone:tz}), min, avg, max };
-      })
-      .sort((a,b)=>a.day-b.day);
+    let days = (dailyDataset||[]).slice().sort((a,b)=>a.day-b.day);
+    if(!days.length){
+      const byDay = new Map();
+      hourlyDataset.forEach(d=>{
+        const k = d.start.setZone(tz).toFormat("yyyy-LL-dd");
+        if(!byDay.has(k)) byDay.set(k, []);
+        byDay.get(k).push(d.price);
+      });
+      days = Array.from(byDay.entries())
+        .map(([k,arr])=>{
+          const min = d3.min(arr), max = d3.max(arr), avg = arr.reduce((s,x)=>s+x,0)/arr.length;
+          return { day: DateTime.fromISO(k,{zone:tz}), min, avg, max };
+        })
+        .sort((a,b)=>a.day-b.day);
+    }
 
     const el = d3.select(containerSel);
     el.selectAll("*").remove();
@@ -547,10 +562,12 @@
 
     // zero + overall avg
     zeroLine(g, y, width);
-    const overallAvg = hourlyDataset.reduce((s,d)=>s+d.price,0)/hourlyDataset.length;
+    const overallAvg = dailyDataset?.length
+      ? days.reduce((sum,day)=>sum+day.avg,0)/days.length
+      : hourlyDataset.reduce((s,d)=>s+d.price,0)/hourlyDataset.length;
     horizLine(g, y, overallAvg, width);
 
-    const color = v => v==="min" ? "var(--green)" : v==="max" ? "var(--red)" : "var(--blue)";
+    const color = v => v==="min" ? "var(--price-low)" : v==="max" ? "var(--price-veryhigh)" : "var(--price-avg)";
 
     const dayGroups = g.selectAll("g.day")
       .data(days).enter().append("g")
@@ -582,7 +599,7 @@
   function renderAll(){
     drawHourlyChart("#chart-today", todayData);
     drawHourlyChart("#chart-tomorrow", tomorrowData);
-    drawDailyAggChart("#chart-30", data30);
+    drawDailyAggChart("#chart-30", data30, daily30Data);
     for (const k of ["min","avg","max"]) {
       const el = document.querySelector(`#legend-30 .item[data-key="${k}"]`);
       if (el) el.classList.toggle("off", !visibility30[k]);

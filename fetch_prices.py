@@ -3,6 +3,7 @@ import os
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from datetime import datetime, time, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -22,19 +23,19 @@ def classification_position(time_series):
     return node.text.strip() if node is not None and node.text else None
 
 
-def fetch_day(local_date):
-    day_start_local = datetime.combine(local_date, time.min, tzinfo=VIENNA)
-    day_end_local = datetime.combine(local_date + timedelta(days=1), time.min, tzinfo=VIENNA)
-    day_start_utc = day_start_local.astimezone(timezone.utc)
-    day_end_utc = day_end_local.astimezone(timezone.utc)
+def fetch_slots(start_local_date, end_local_date):
+    start_local = datetime.combine(start_local_date, time.min, tzinfo=VIENNA)
+    end_local = datetime.combine(end_local_date, time.min, tzinfo=VIENNA)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
 
     params = urllib.parse.urlencode({
         'securityToken': TOKEN,
         'documentType': 'A44',
         'in_Domain': DOMAIN,
         'out_Domain': DOMAIN,
-        'periodStart': day_start_utc.strftime('%Y%m%d%H%M'),
-        'periodEnd': day_end_utc.strftime('%Y%m%d%H%M'),
+        'periodStart': start_utc.strftime('%Y%m%d%H%M'),
+        'periodEnd': end_utc.strftime('%Y%m%d%H%M'),
     })
     url = f'https://web-api.tp.entsoe.eu/api?{params}'
 
@@ -70,7 +71,7 @@ def fetch_day(local_date):
                 price_mwh = float(point.findtext('ns:price.amount', namespaces=NS))
                 slot_start = period_start + timedelta(minutes=position * 15)
                 slot_end = slot_start + timedelta(minutes=15)
-                if slot_start < day_start_utc or slot_start >= day_end_utc:
+                if slot_start < start_utc or slot_start >= end_utc:
                     continue
 
                 seen[slot_start.isoformat()] = {
@@ -79,23 +80,51 @@ def fetch_day(local_date):
                     'p': round(price_mwh / 1000, 6),
                 }
 
-    expected_slots = int((day_end_utc - day_start_utc).total_seconds() // (15 * 60))
+    expected_slots = int((end_utc - start_utc).total_seconds() // (15 * 60))
     if len(seen) != expected_slots:
         raise ValueError(
-            f'Incomplete ENTSO-E position-1 series for {local_date}: '
+            f'Incomplete ENTSO-E position-1 series for {start_local_date}..{end_local_date}: '
             f'expected {expected_slots} slots, got {len(seen)}'
         )
 
     return sorted(seen.values(), key=lambda item: item['s'])
 
 
+def fetch_day(local_date):
+    return fetch_slots(local_date, local_date + timedelta(days=1))
+
+
+def aggregate_daily(slots):
+    by_day = defaultdict(list)
+    for slot in slots:
+        local_day = datetime.fromisoformat(slot['s']).astimezone(VIENNA).date()
+        by_day[local_day].append(slot['p'])
+
+    return [
+        {
+            'd': day.isoformat(),
+            'min': round(min(prices), 6),
+            'avg': round(sum(prices) / len(prices), 6),
+            'max': round(max(prices), 6),
+        }
+        for day, prices in sorted(by_day.items())
+    ]
+
+
 def main():
     now_utc = datetime.now(timezone.utc)
     today_local = now_utc.astimezone(VIENNA).date()
     tomorrow_local = today_local + timedelta(days=1)
+    history_start = today_local - timedelta(days=29)
 
-    today = fetch_day(today_local)
+    history_slots = fetch_slots(history_start, tomorrow_local)
+    history = aggregate_daily(history_slots)
+    today = [
+        slot for slot in history_slots
+        if datetime.fromisoformat(slot['s']).astimezone(VIENNA).date() == today_local
+    ]
     print(f'Heute: {len(today)} Punkte')
+    print(f'Historie: {len(history)} Tage')
 
     try:
         tomorrow = fetch_day(tomorrow_local)
@@ -108,6 +137,7 @@ def main():
         'updated': now_utc.isoformat(),
         'today': today,
         'tomorrow': tomorrow,
+        'history': history,
     }
     with open('data.json', 'w', encoding='utf-8') as file:
         json.dump(data, file)
