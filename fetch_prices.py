@@ -204,7 +204,7 @@ def main():
             f"got {len(history_slots)}"
         )
     history = aggregate_daily(history_slots)
-    today = hourly_average_slots(local_day_slots(history_slots, today_local))
+    today = local_day_slots(history_slots, today_local)
     print(f'Heute: {len(today)} Punkte')
     print(f'Historie: {len(history)} Tage')
 
