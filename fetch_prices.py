@@ -208,8 +208,13 @@ def main():
     print(f'Heute: {len(today)} Punkte')
     print(f'Historie: {len(history)} Tage')
 
+    tomorrow_release_local = datetime.combine(today_local, time(14, 30), tzinfo=VIENNA)
+    if now_utc.astimezone(VIENNA) < tomorrow_release_local:
+        tomorrow_available = False
+        print('Morgen noch nicht freigegeben: vor 14:30 lokaler Zeit')
+
     if tomorrow_available:
-        tomorrow = hourly_average_slots(local_day_slots(slots_by_start.values(), tomorrow_local))
+        tomorrow = local_day_slots(slots_by_start.values(), tomorrow_local)
         print(f'Morgen: {len(tomorrow)} Punkte')
     else:
         tomorrow = []
