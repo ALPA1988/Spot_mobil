@@ -127,19 +127,48 @@ def aggregate_daily(slots):
     ]
 
 
+def local_day_slots(slots, local_date):
+    return [
+        slot for slot in slots
+        if datetime.fromisoformat(slot['s']).astimezone(VIENNA).date() == local_date
+    ]
+
+
+def hourly_average_slots(slots):
+    by_hour = defaultdict(list)
+    for slot in slots:
+        local_start = datetime.fromisoformat(slot['s']).astimezone(VIENNA)
+        hour_start = local_start.replace(minute=0, second=0, microsecond=0)
+        by_hour[hour_start].append(slot['p'])
+
+    hourly_price = {
+        hour_start: round(sum(prices) / len(prices), 6)
+        for hour_start, prices in by_hour.items()
+    }
+
+    normalized = []
+    for slot in slots:
+        local_start = datetime.fromisoformat(slot['s']).astimezone(VIENNA)
+        hour_start = local_start.replace(minute=0, second=0, microsecond=0)
+        normalized.append({**slot, 'p': hourly_price[hour_start]})
+    return normalized
+
+
 def main():
     now_utc = datetime.now(timezone.utc)
     today_local = now_utc.astimezone(VIENNA).date()
     tomorrow_local = today_local + timedelta(days=1)
+    day_after_tomorrow = tomorrow_local + timedelta(days=1)
     history_start = today_local - timedelta(days=29)
 
-    history_slots = fetch_slots(history_start, tomorrow_local, validate=False)
-    history_by_start = {slot["s"]: slot for slot in history_slots}
+    all_slots = fetch_slots(history_start, day_after_tomorrow, validate=False)
+    slots_by_start = {slot["s"]: slot for slot in all_slots}
     day = history_start
     expected_history_slots = 0
-    while day < tomorrow_local:
+    tomorrow_available = True
+    while day < day_after_tomorrow:
         day_slots = [
-            slot for slot in history_by_start.values()
+            slot for slot in slots_by_start.values()
             if datetime.fromisoformat(slot["s"]).astimezone(VIENNA).date() == day
         ]
         day_start = datetime.combine(day, time.min, tzinfo=VIENNA)
@@ -148,35 +177,42 @@ def main():
             (day_end.astimezone(timezone.utc) - day_start.astimezone(timezone.utc)).total_seconds()
             // (15 * 60)
         )
-        expected_history_slots += expected_day_slots
         if len(day_slots) != expected_day_slots:
-            print(
-                f"Historie {day}: {len(day_slots)}/{expected_day_slots} Punkte, lade Tag nach"
-            )
-            for slot in fetch_day(day):
-                history_by_start[slot["s"]] = slot
+            if day == tomorrow_local:
+                tomorrow_available = False
+                print(f"Morgen noch nicht vollständig: {len(day_slots)}/{expected_day_slots} Punkte")
+            else:
+                print(
+                    f"Historie {day}: {len(day_slots)}/{expected_day_slots} Punkte, lade Tag nach"
+                )
+                for slot in fetch_day(day):
+                    slots_by_start[slot["s"]] = slot
+        if day < tomorrow_local:
+            expected_history_slots += expected_day_slots
         day += timedelta(days=1)
 
-    history_slots = sorted(history_by_start.values(), key=lambda item: item["s"])
+    history_slots = sorted(
+        (
+            slot for slot in slots_by_start.values()
+            if datetime.fromisoformat(slot["s"]).astimezone(VIENNA).date() < tomorrow_local
+        ),
+        key=lambda item: item["s"],
+    )
     if len(history_slots) != expected_history_slots:
         raise ValueError(
             f"Incomplete ENTSO-E history: expected {expected_history_slots} slots, "
             f"got {len(history_slots)}"
         )
     history = aggregate_daily(history_slots)
-    today = [
-        slot for slot in history_slots
-        if datetime.fromisoformat(slot['s']).astimezone(VIENNA).date() == today_local
-    ]
+    today = hourly_average_slots(local_day_slots(history_slots, today_local))
     print(f'Heute: {len(today)} Punkte')
     print(f'Historie: {len(history)} Tage')
 
-    try:
-        tomorrow = fetch_day(tomorrow_local)
+    if tomorrow_available:
+        tomorrow = hourly_average_slots(local_day_slots(slots_by_start.values(), tomorrow_local))
         print(f'Morgen: {len(tomorrow)} Punkte')
-    except Exception as error:
+    else:
         tomorrow = []
-        print(f'Morgen noch nicht verfügbar: {error}')
 
     data = {
         'updated': now_utc.isoformat(),
