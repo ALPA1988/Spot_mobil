@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,6 +23,19 @@ def classification_position(time_series):
         'ns:classificationSequence_AttributeInstanceComponent.position', NS
     )
     return node.text.strip() if node is not None and node.text else None
+
+
+def resolution_minutes(value):
+    match = re.fullmatch(r'PT(?:(\d+)H)?(?:(\d+)M)?', value or '')
+    if not match:
+        raise ValueError(f'Unexpected ENTSO-E resolution: {value}')
+
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    total_minutes = hours * 60 + minutes
+    if total_minutes <= 0 or total_minutes % 15 != 0:
+        raise ValueError(f'Unsupported ENTSO-E resolution: {value}')
+    return total_minutes
 
 
 def fetch_slots(start_local_date, end_local_date, validate=True):
@@ -68,12 +82,11 @@ def fetch_slots(start_local_date, end_local_date, validate=True):
             period_start_str = period.findtext('ns:timeInterval/ns:start', namespaces=NS)
             period_start = datetime.fromisoformat(period_start_str.strip().replace('Z', '+00:00'))
             resolution = period.findtext('ns:resolution', namespaces=NS)
-            if resolution != 'PT15M':
-                raise ValueError(f'Unexpected ENTSO-E resolution: {resolution}')
+            step_minutes = resolution_minutes(resolution)
 
             period_end_str = period.findtext('ns:timeInterval/ns:end', namespaces=NS)
             period_end = datetime.fromisoformat(period_end_str.strip().replace('Z', '+00:00'))
-            period_slots = int((period_end - period_start).total_seconds() // (15 * 60))
+            period_units = int((period_end - period_start).total_seconds() // (step_minutes * 60))
             points = sorted(
                 (
                     int(point.findtext('ns:position', namespaces=NS)) - 1,
@@ -83,18 +96,20 @@ def fetch_slots(start_local_date, end_local_date, validate=True):
             )
 
             for index, (position, price_mwh) in enumerate(points):
-                next_position = points[index + 1][0] if index + 1 < len(points) else period_slots
-                for slot_position in range(position, next_position):
-                    slot_start = period_start + timedelta(minutes=slot_position * 15)
-                    slot_end = slot_start + timedelta(minutes=15)
-                    if slot_start < start_utc or slot_start >= end_utc:
-                        continue
+                next_position = points[index + 1][0] if index + 1 < len(points) else period_units
+                for unit_position in range(position, next_position):
+                    unit_start = period_start + timedelta(minutes=unit_position * step_minutes)
+                    for offset_minutes in range(0, step_minutes, 15):
+                        slot_start = unit_start + timedelta(minutes=offset_minutes)
+                        slot_end = slot_start + timedelta(minutes=15)
+                        if slot_start < start_utc or slot_start >= end_utc:
+                            continue
 
-                    seen[slot_start.isoformat()] = {
-                        's': slot_start.isoformat(),
-                        'e': slot_end.isoformat(),
-                        'p': round(price_mwh / 1000, 6),
-                    }
+                        seen[slot_start.isoformat()] = {
+                            's': slot_start.isoformat(),
+                            'e': slot_end.isoformat(),
+                            'p': round(price_mwh / 1000, 6),
+                        }
 
     expected_slots = int((end_utc - start_utc).total_seconds() // (15 * 60))
     if validate and len(seen) != expected_slots:
